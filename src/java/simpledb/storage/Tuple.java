@@ -1,7 +1,7 @@
 package simpledb.storage;
 
 import java.io.Serializable;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Iterator;
 
 /**
@@ -13,6 +13,11 @@ public class Tuple implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
+    private TupleDesc td;
+
+    private RecordId recordId; // the location of this tuple on disk
+
+    private Field[] fields; // array of field, contain data for each field
     /**
      * Create a new tuple with the specified schema (type).
      *
@@ -22,6 +27,23 @@ public class Tuple implements Serializable {
      */
     public Tuple(TupleDesc td) {
         // some code goes here
+        try{
+            if (td == null){
+                throw new Exception("TupleDesc is null");
+            }
+
+            if (td.numFields() < 1){
+                throw new Exception(("TupleDesc has one field at least"));
+            }
+
+            this.td = td;
+            this.fields = new Field[td.numFields()];
+
+        }catch(Exception e){
+            e.printStackTrace();
+            System.out.println(e.getMessage());
+        }
+
     }
 
     /**
@@ -29,7 +51,7 @@ public class Tuple implements Serializable {
      */
     public TupleDesc getTupleDesc() {
         // some code goes here
-        return null;
+        return td;
     }
 
     /**
@@ -38,7 +60,7 @@ public class Tuple implements Serializable {
      */
     public RecordId getRecordId() {
         // some code goes here
-        return null;
+        return recordId;
     }
 
     /**
@@ -49,6 +71,7 @@ public class Tuple implements Serializable {
      */
     public void setRecordId(RecordId rid) {
         // some code goes here
+        recordId = rid;
     }
 
     /**
@@ -61,6 +84,17 @@ public class Tuple implements Serializable {
      */
     public void setField(int i, Field f) {
         // some code goes here
+        try{
+            if (0 <= i && i < fields.length){
+                fields[i] = f;
+            }else{
+                throw new Exception("the index is out of range");
+            }
+
+        }catch(Exception e){
+            System.out.println(e.getMessage());
+        }
+
     }
 
     /**
@@ -71,6 +105,16 @@ public class Tuple implements Serializable {
      */
     public Field getField(int i) {
         // some code goes here
+        try{
+            if (0 <= i && i < fields.length){
+                return fields[i];
+            }else{
+                throw new Exception("the index is out of range");
+            }
+
+        }catch(Exception e){
+            System.out.println(e.getMessage());
+        }
         return null;
     }
 
@@ -94,7 +138,21 @@ public class Tuple implements Serializable {
     public Iterator<Field> fields()
     {
         // some code goes here
-        return null;
+        class innerIter implements Iterator<Field>{
+            private int index = 0;
+            @Override
+            public boolean hasNext() {
+                return index < fields.length;
+            }
+
+            @Override
+            public Field next() {
+                Field field = fields[index];
+                index ++;
+                return field;
+            }
+        }
+        return new innerIter();
     }
 
     /**
@@ -103,5 +161,6 @@ public class Tuple implements Serializable {
     public void resetTupleDesc(TupleDesc td)
     {
         // some code goes here
+        this.td = td;
     }
 }
