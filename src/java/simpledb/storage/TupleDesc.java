@@ -263,7 +263,7 @@ public class TupleDesc implements Serializable {
 
     public boolean equals(Object o) {
         // some code goes here
-        // todo: it is easy to forget!
+        // todo: it is unnecessary, because null instanceof tupleDesc ,return false
         if ( o == null){
             return false;
         }

@@ -13,7 +13,7 @@ public class Tuple implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    private TupleDesc td;
+    private TupleDesc td;// the description of tuple
 
     private RecordId recordId; // the location of this tuple on disk
 
@@ -92,6 +92,7 @@ public class Tuple implements Serializable {
             }
 
         }catch(Exception e){
+            e.printStackTrace();
             System.out.println(e.getMessage());
         }
 
@@ -128,7 +129,14 @@ public class Tuple implements Serializable {
      */
     public String toString() {
         // some code goes here
-        throw new UnsupportedOperationException("Implement this");
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < fields.length; i++) {
+            builder.append(fields[i].toString());
+            if (i != fields.length - 1) {
+                builder.append("\t");
+            }
+        }
+        return builder.toString();
     }
 
     /**

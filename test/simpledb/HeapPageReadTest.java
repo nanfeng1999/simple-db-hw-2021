@@ -89,7 +89,6 @@ public class HeapPageReadTest extends SimpleDbTestBase {
     @Test public void testIterator() throws Exception {
         HeapPage page = new HeapPage(pid, EXAMPLE_DATA);
         Iterator<Tuple> it = page.iterator();
-
         int row = 0;
         while (it.hasNext()) {
             Tuple tup = it.next();

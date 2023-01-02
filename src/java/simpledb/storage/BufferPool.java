@@ -9,6 +9,8 @@ import simpledb.transaction.TransactionId;
 
 import java.io.*;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -33,6 +35,13 @@ public class BufferPool {
     constructor instead. */
     public static final int DEFAULT_PAGES = 50;
 
+    private final Byte lock  = (byte) 0;
+
+    private Map<Integer,Page> pageCache;
+
+    private int maxSize = -1;
+
+
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -40,8 +49,15 @@ public class BufferPool {
      */
     public BufferPool(int numPages) {
         // some code goes here
+        if (numPages <= 0){
+            pageCache = new HashMap<>(DEFAULT_PAGES);
+            maxSize = DEFAULT_PAGES;
+            return;
+        }
+        pageCache = new HashMap<>(numPages);
+        maxSize = numPages;
     }
-    
+
     public static int getPageSize() {
       return pageSize;
     }
@@ -73,7 +89,30 @@ public class BufferPool {
      */
     public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
-        // some code goes here
+        // some code goes her
+        synchronized (lock) {
+            Page page = pageCache.get(pid.hashCode());
+            if (page == null) {
+                if (pageCache.size() == maxSize){
+                    throw new DbException("Too many pages");
+                }
+
+                DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
+                page = file.readPage(pid);
+                if (page == null){
+                    throw new DbException("Can not get the page");
+                }
+                pageCache.put(pid.hashCode(), page);
+            }
+
+            switch (perm) {
+                case READ_ONLY:
+                    return page.getBeforeImage();
+                case READ_WRITE:
+                    return page;
+            }
+
+        }
         return null;
     }
 
