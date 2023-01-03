@@ -123,13 +123,16 @@ public class SystemTestUtil {
             }
         }
 
+        int count1 = 0;
         iterator.open();
         while (iterator.hasNext()) {
             Tuple t = iterator.next();
             List<Integer> list = tupleToList(t);
             boolean isExpected = copy.remove(list);
             Debug.log("scanned tuple: %s (%s)", t, isExpected ? "expected" : "not expected");
+            count1 += 1;
             if (!isExpected) {
+                System.out.println(count1);
                 Assert.fail("expected tuples does not contain: " + t);
             }
         }

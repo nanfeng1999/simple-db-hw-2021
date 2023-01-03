@@ -95,12 +95,11 @@ public class HeapFile implements DbFile {
                 byte[] data = new byte[BufferPool.getPageSize()];
 
                 // todo: it is easy to forget that pageNo == 0 ,you don not need skip any bytes
-                if (pageNumber > 0){
-                    if (bis.skip((long) (pageNumber - 1) * BufferPool.getPageSize()) !=
-                            (long) (pageNumber - 1) * BufferPool.getPageSize()) {
-                        throw new IllegalArgumentException(
-                                "Unable to seek to correct place in HeapFile");
-                    }
+                // todo: (pageNumber - 1) * BufferPool.getPageSize() is wrong
+                if (bis.skip((long) pageNumber * BufferPool.getPageSize()) !=
+                        (long) pageNumber * BufferPool.getPageSize()) {
+                    throw new IllegalArgumentException(
+                            "Unable to seek to correct place in HeapFile");
                 }
 
                 int ret = bis.read(data, 0, BufferPool.getPageSize());

@@ -86,6 +86,7 @@ public class ScanTest extends SimpleDbTestBase {
             @Override
             public Page readPage(PageId pid) throws NoSuchElementException {
                 readCount += 1;
+                //System.out.println("count:"+readCount);
                 return super.readPage(pid);
             }
 
@@ -100,6 +101,19 @@ public class ScanTest extends SimpleDbTestBase {
         InstrumentedHeapFile table = new InstrumentedHeapFile(f, td);
         Database.getCatalog().addTable(table, SystemTestUtil.getUUID());
 
+        // test
+//        TransactionId tid = new TransactionId();
+//        DbFileIterator it = table.iterator(tid);
+//        it.open();
+//        int i = 0;
+//        while(it.hasNext()){
+//            List<Integer> t  = tuples.get(i);
+//            i += 1;
+//            Tuple tuple = it.next();
+//            List<Integer> list = tupleToList(tuple);
+//            System.out.println(i+":"+t+"\t"+list);
+//        }
+
         // Scan the table once
         SystemTestUtil.matchTuples(table, tuples);
         assertEquals(PAGES, table.readCount);
@@ -109,7 +123,14 @@ public class ScanTest extends SimpleDbTestBase {
         SystemTestUtil.matchTuples(table, tuples);
         assertEquals(0, table.readCount);
     }
-
+    public static List<Integer> tupleToList(Tuple tuple) {
+        List<Integer> list = new ArrayList<>();
+        for (int i = 0; i < tuple.getTupleDesc().numFields(); ++i) {
+            int value = ((IntField)tuple.getField(i)).getValue();
+            list.add(value);
+        }
+        return list;
+    }
     /** Verifies SeqScan's getTupleDesc prefixes the table name + "." to the field names
      * @throws IOException
      */
