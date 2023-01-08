@@ -1,5 +1,7 @@
 package simpledb.execution;
 
+import simpledb.common.Type;
+import simpledb.storage.Field;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.common.DbException;
 import simpledb.storage.Tuple;
@@ -14,6 +16,12 @@ public class Join extends Operator {
 
     private static final long serialVersionUID = 1L;
 
+    private JoinPredicate p;
+    private OpIterator child1;
+    private OpIterator child2;
+    private OpIterator[] children;
+
+    private Tuple currTuple;
     /**
      * Constructor. Accepts two children to join and the predicate to join them
      * on
@@ -27,11 +35,14 @@ public class Join extends Operator {
      */
     public Join(JoinPredicate p, OpIterator child1, OpIterator child2) {
         // some code goes here
+        this.p = p;
+        this.child1 = child1;
+        this.child2 = child2;
     }
 
     public JoinPredicate getJoinPredicate() {
         // some code goes here
-        return null;
+        return p;
     }
 
     /**
@@ -41,7 +52,7 @@ public class Join extends Operator {
      * */
     public String getJoinField1Name() {
         // some code goes here
-        return null;
+        return child1.getTupleDesc().getFieldName(p.getField1());
     }
 
     /**
@@ -51,7 +62,7 @@ public class Join extends Operator {
      * */
     public String getJoinField2Name() {
         // some code goes here
-        return null;
+        return child2.getTupleDesc().getFieldName(p.getField2());
     }
 
     /**
@@ -60,20 +71,31 @@ public class Join extends Operator {
      */
     public TupleDesc getTupleDesc() {
         // some code goes here
-        return null;
+        TupleDesc td1 = child1.getTupleDesc();
+        TupleDesc td2 = child2.getTupleDesc();
+        return TupleDesc.merge(td1,td2);
     }
 
     public void open() throws DbException, NoSuchElementException,
             TransactionAbortedException {
-        // some code goes here
+        // some code goes
+        super.open();
+        child1.open();
+        child2.open();
     }
 
     public void close() {
         // some code goes here
+        child1.close();
+        child2.close();
+        currTuple = null;
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
         // some code goes here
+        child1.rewind();
+        child2.rewind();
+        currTuple = null;
     }
 
     /**
@@ -96,18 +118,53 @@ public class Join extends Operator {
      */
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
         // some code goes here
+        // 如果下一个元素存在或者当前是最后一个元素 那么进入遍历
+        TupleDesc td1 = child1.getTupleDesc();
+        TupleDesc td2 = child2.getTupleDesc();
+
+        while (this.child1.hasNext() || this.currTuple != null){
+            if (this.currTuple == null || !this.child2.hasNext()){
+                if (!this.child1.hasNext()){
+                    break;
+                }
+
+                this.currTuple = this.child1.next();
+                this.child2.rewind();
+            }
+
+            while (child2.hasNext()) {
+                Tuple t2 = child2.next();
+
+                if (currTuple.getField(p.getField1()).compare(p.getOperator(), t2.getField(p.getField2()))) {
+                    TupleDesc td = getTupleDesc();
+                    Tuple newTuple = new Tuple(td);
+                    for (int i = 0; i < td1.numFields(); i++) {
+                        newTuple.setField(i, currTuple.getField(i));
+                    }
+
+                    for (int i = 0; i < td2.numFields(); i++) {
+                        newTuple.setField(i + td1.numFields(), t2.getField(i));
+                    }
+                    return newTuple;
+                }
+            }
+
+        }
+
         return null;
     }
+
 
     @Override
     public OpIterator[] getChildren() {
         // some code goes here
-        return null;
+        return this.children;
     }
 
     @Override
     public void setChildren(OpIterator[] children) {
         // some code goes here
+        this.children = children;
     }
 
 }
