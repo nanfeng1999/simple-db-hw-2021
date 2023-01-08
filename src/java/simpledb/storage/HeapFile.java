@@ -79,7 +79,6 @@ public class HeapFile implements DbFile {
         try{
             if (pid instanceof HeapPageId) {
                 HeapPageId hpid = (HeapPageId) pid;
-//                todo: lack many judgement
 //                int pageNumber = hpid.getPageNumber();
 //                RandomAccessFile randomAccessFile = new RandomAccessFile(f,"rw");
 //                randomAccessFile.seek((long) (pageNumber - 1) * BufferPool.getPageSize());
