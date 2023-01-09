@@ -262,15 +262,21 @@ public class HeapPage implements Page {
             throw new DbException("The tuple not exist in this page");
         }
 
+        if (!t.getTupleDesc().equals(td)){
+            throw new DbException("UnCorrect TupleDesc");
+        }
+
         int tupleNumber = rid.getTupleNumber();
         if (0 <= tupleNumber && tupleNumber < numSlots){
             // todo: it is easy to forget
-            if (!isSlotUsed(tupleNumber)){
-                throw new DbException("The tuple not exist");
+            synchronized (oldDataLock) {
+                if (!isSlotUsed(tupleNumber)) {
+                    throw new DbException("The tuple not exist");
+                }
+                tuples[tupleNumber] = null;
+                markSlotUsed(tupleNumber, false);
+                setBeforeImage();
             }
-            tuples[tupleNumber] = null;
-            markSlotUsed(tupleNumber,false);
-            setBeforeImage();
         }else{
             throw new DbException("UnCorrect tuple number");
         }
@@ -296,13 +302,15 @@ public class HeapPage implements Page {
         }
 
         for (int i = 0; i < numSlots; i++) {
-            if (!isSlotUsed(i)){
-                RecordId rid = new RecordId(pid,i);
-                t.setRecordId(rid);
-                tuples[i] = t;
-                markSlotUsed(i,true);
-                setBeforeImage();
-                break;
+            synchronized (oldDataLock) {
+                if (!isSlotUsed(i)) {
+                    RecordId rid = new RecordId(pid, i);
+                    t.setRecordId(rid);
+                    tuples[i] = t;
+                    markSlotUsed(i, true);
+                    setBeforeImage();
+                    break;
+                }
             }
         }
     }

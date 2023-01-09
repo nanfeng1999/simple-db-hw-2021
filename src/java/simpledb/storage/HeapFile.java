@@ -79,15 +79,6 @@ public class HeapFile implements DbFile {
         try{
             if (pid instanceof HeapPageId) {
                 HeapPageId hpid = (HeapPageId) pid;
-//                int pageNumber = hpid.getPageNumber();
-//                RandomAccessFile randomAccessFile = new RandomAccessFile(f,"rw");
-//                randomAccessFile.seek((long) (pageNumber - 1) * BufferPool.getPageSize());
-//
-//                byte[] data = new byte[BufferPool.getPageSize()];
-//                randomAccessFile.read(data);
-//                randomAccessFile.close();
-//
-//                return new HeapPage(hpid,data);
 
                 int pageNumber = hpid.getPageNumber();
                 BufferedInputStream bis = new BufferedInputStream(new FileInputStream(f));
@@ -100,7 +91,6 @@ public class HeapFile implements DbFile {
                     throw new IllegalArgumentException(
                             "Unable to seek to correct place in HeapFile");
                 }
-
                 int ret = bis.read(data, 0, BufferPool.getPageSize());
                 if (ret == -1) {
                     throw new IllegalArgumentException("Read past end of table");
@@ -128,6 +118,12 @@ public class HeapFile implements DbFile {
     public void writePage(Page page) throws IOException {
         // some code goes here
         // not necessary for lab1
+        RandomAccessFile rf = new RandomAccessFile(f, "rw");
+        byte[] data = page.getPageData();
+        int offset = page.getId().getPageNumber() * BufferPool.getPageSize();
+        rf.seek(offset);
+        rf.write(data);
+        rf.close();
     }
 
     /**
@@ -142,7 +138,21 @@ public class HeapFile implements DbFile {
     public List<Page> insertTuple(TransactionId tid, Tuple t)
             throws DbException, IOException, TransactionAbortedException {
         // some code goes here
-        return null;
+        for (int i = 0; i < numPages(); i++) {
+            PageId pid = new HeapPageId(tableid,i);
+
+            HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid,pid,Permissions.READ_WRITE);
+            if (page.getNumEmptySlots() > 0){
+                page.insertTuple(t);
+                return new ArrayList<>(Arrays.asList(page));
+            }
+        }
+
+        HeapPage currPage = new HeapPage(new HeapPageId(getId(),numPages()),HeapPage.createEmptyPageData());
+        currPage.insertTuple(t);
+        writePage(currPage);
+
+        return new ArrayList<>(Arrays.asList(currPage));
         // not necessary for lab1
     }
 
@@ -150,7 +160,15 @@ public class HeapFile implements DbFile {
     public ArrayList<Page> deleteTuple(TransactionId tid, Tuple t) throws DbException,
             TransactionAbortedException {
         // some code goes here
-        return null;
+        PageId pid = t.getRecordId().getPageId();
+        if (pid.getTableId() != tableid){
+            throw new DbException("UnCorrect tableId");
+        }
+
+        HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid,pid,Permissions.READ_WRITE);
+        page.deleteTuple(t);
+
+        return new ArrayList<>(Arrays.asList(page));
         // not necessary for lab1
     }
 
@@ -178,10 +196,12 @@ public class HeapFile implements DbFile {
                     return false;
                 }
 
-                if (pageNo < numPages() || (pageNo == numPages() && it.hasNext())){
-                    return true;
+                while(pageNo < numPages() && !it.hasNext()){
+                    getPageByNo(pageNo);
+                    pageNo ++;
                 }
-                return false;
+
+                return !(pageNo == numPages() && !it.hasNext());
             }
 
             @Override
@@ -191,20 +211,14 @@ public class HeapFile implements DbFile {
                     throw new NoSuchElementException("have no element");
                 }
 
-                if (!it.hasNext()){
-                    getPageByNo(pageNo);
-                    pageNo++;
-                }
-
                 return it.next();
 
             }
 
             @Override
             public void rewind() throws DbException, TransactionAbortedException {
-                pageNo = 0;
-                getPageByNo(pageNo);
-                pageNo ++;
+                close();
+                open();
             }
 
             @Override
