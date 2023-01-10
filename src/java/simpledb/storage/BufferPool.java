@@ -8,11 +8,8 @@ import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
 import java.io.*;
-
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -38,10 +35,11 @@ public class BufferPool {
 
     private final Byte lock  = (byte) 0;
 
-    private Map<Integer,Page> pageCache;
+    private LRUCache<Integer,Page> pageCache;
 
     private int maxSize = -1;
 
+    private int currSize = 0;
 
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -51,11 +49,11 @@ public class BufferPool {
     public BufferPool(int numPages) {
         // some code goes here
         if (numPages <= 0){
-            pageCache = new HashMap<>(DEFAULT_PAGES);
+            pageCache = new LRUCache<>(DEFAULT_PAGES);
             maxSize = DEFAULT_PAGES;
             return;
         }
-        pageCache = new HashMap<>(numPages);
+        pageCache = new LRUCache<>(numPages);
         maxSize = numPages;
     }
 
@@ -94,14 +92,14 @@ public class BufferPool {
         synchronized (lock) {
             Page page = pageCache.get(pid.hashCode());
             if (page == null) {
-                if (pageCache.size() == maxSize){
-                    throw new DbException("Too many pages");
-                }
 
                 DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
                 page = file.readPage(pid);
                 if (page == null){
                     throw new DbException("Can not get the page");
+                }
+                if (currSize == maxSize){
+                    evictPage();
                 }
                 pageCache.put(pid.hashCode(), page);
             }
@@ -182,7 +180,16 @@ public class BufferPool {
         DbFile file = Database.getCatalog().getDatabaseFile(tableId);
         List<Page> dirtyPages = file.insertTuple(tid,t);
         for (Page dirtyPage : dirtyPages) {
-            pageCache.put(dirtyPage.getId().hashCode(),dirtyPage);
+            PageId pid = dirtyPage.getId();
+            if (pageCache.get(pid.hashCode()) != null){
+                pageCache.put(dirtyPage.getId().hashCode(),dirtyPage);
+            } else if (currSize < maxSize) {
+                pageCache.put(dirtyPage.getId().hashCode(),dirtyPage);
+                currSize++;
+            }else{
+                evictPage();
+                pageCache.put(dirtyPage.getId().hashCode(),dirtyPage);
+            }
         }
     }
 
@@ -218,7 +225,13 @@ public class BufferPool {
     public synchronized void flushAllPages() throws IOException {
         // some code goes here
         // not necessary for lab1
-
+        for (Map.Entry<Object, LRUCache.DoubleLinkedNode<Integer, Page>> entry : pageCache.entrySet()) {
+            Page page = entry.getValue().value;
+            if (page.isDirty() != null){
+                Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
+                page.markDirty(false,null);
+            }
+        }
     }
 
     /** Remove the specific page id from the buffer pool.
@@ -232,6 +245,7 @@ public class BufferPool {
     public synchronized void discardPage(PageId pid) {
         // some code goes here
         // not necessary for lab1
+        pageCache.remove(pid.hashCode());
     }
 
     /**
@@ -241,6 +255,13 @@ public class BufferPool {
     private synchronized  void flushPage(PageId pid) throws IOException {
         // some code goes here
         // not necessary for lab1
+        Page page = pageCache.get(pid.hashCode());
+        if (page == null){
+            throw new IOException("UnCorrected page id");
+        }
+
+        Database.getCatalog().getDatabaseFile(pid.getTableId()).writePage(page);
+        page.markDirty(false,null);
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -257,6 +278,13 @@ public class BufferPool {
     private synchronized  void evictPage() throws DbException {
         // some code goes here
         // not necessary for lab1
+        Page page = pageCache.removeOldest();
+        try {
+            flushPage(page.getId());
+        }catch (IOException e){
+            throw new DbException(e.getMessage());
+        }
+        page.markDirty(false,null);
     }
 
 }
