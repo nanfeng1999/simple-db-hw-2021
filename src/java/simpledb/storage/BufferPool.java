@@ -279,7 +279,9 @@ public class BufferPool {
         // not necessary for lab1
         Page page = pageCache.removeOldest();
         try {
-            flushPage(page.getId());
+            if(page.isDirty() != null) {
+                flushPage(page.getId());
+            }
         }catch (IOException e){
             throw new DbException(e.getMessage());
         }

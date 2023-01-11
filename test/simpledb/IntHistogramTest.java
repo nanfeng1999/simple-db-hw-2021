@@ -90,7 +90,7 @@ public class IntHistogramTest {
 		h.addValue(3);
 		h.addValue(1);
 		h.addValue(10);
-		
+
 		// Be conservative in case of alternate implementations
 		Assert.assertTrue(h.estimateSelectivity(Op.GREATER_THAN, -1) > 0.999);
 		Assert.assertTrue(h.estimateSelectivity(Op.GREATER_THAN, 2) > 0.6);
