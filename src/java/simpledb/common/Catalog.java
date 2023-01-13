@@ -39,14 +39,6 @@ public class Catalog {
             this.tupleDesc = tupleDesc;
             this.pkeyField = pkeyField;
         }
-
-        public Table(Integer tableid, String name, DbFile file, TupleDesc tupleDesc) {
-            this.tableid = tableid;
-            this.name = name;
-            this.file = file;
-            this.tupleDesc = tupleDesc;
-            this.pkeyField = "";
-        }
     }
 
     /**
