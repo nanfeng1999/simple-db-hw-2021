@@ -32,7 +32,7 @@ public class BufferPool {
     constructor instead. */
     public static final int DEFAULT_PAGES = 50;
 
-    private final Byte lock  = (byte) 0;
+    private LockManager lockManager;
 
     private LRUCache<Integer,Page> pageCache;
 
@@ -54,6 +54,7 @@ public class BufferPool {
         }
         pageCache = new LRUCache<>(numPages);
         maxSize = numPages;
+        lockManager = new LockManager();
     }
 
     public static int getPageSize() {
@@ -88,30 +89,25 @@ public class BufferPool {
     public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
         // some code goes her
-        synchronized (lock) {
-            Page page = pageCache.get(pid.hashCode());
-            if (page == null) {
-
-                DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
-                page = file.readPage(pid);
-                if (page == null){
-                    throw new DbException("Can not get the page");
-                }
-                if (currSize == maxSize){
-                    evictPage();
-                }
-                pageCache.put(pid.hashCode(), page);
-            }
-
-            switch (perm) {
-                case READ_ONLY:
-                    return page.getBeforeImage();
-                case READ_WRITE:
-                    return page;
-            }
+        while (!lockManager.acquireLock(tid,pid,perm)){
 
         }
-        return null;
+
+        Page page = pageCache.get(pid.hashCode());
+        if (page == null) {
+
+            DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
+            page = file.readPage(pid);
+            if (page == null){
+                throw new DbException("Can not get the page");
+            }
+            if (currSize == maxSize){
+                evictPage();
+            }
+            pageCache.put(pid.hashCode(), page);
+        }
+
+        return page;
     }
 
     /**
@@ -126,6 +122,7 @@ public class BufferPool {
     public  void unsafeReleasePage(TransactionId tid, PageId pid) {
         // some code goes here
         // not necessary for lab1|lab2
+        lockManager.releaseLock(tid,pid);
     }
 
     /**
@@ -142,7 +139,7 @@ public class BufferPool {
     public boolean holdsLock(TransactionId tid, PageId p) {
         // some code goes here
         // not necessary for lab1|lab2
-        return false;
+        return lockManager.holdsLock(tid,p);
     }
 
     /**
@@ -179,6 +176,7 @@ public class BufferPool {
         DbFile file = Database.getCatalog().getDatabaseFile(tableId);
         List<Page> dirtyPages = file.insertTuple(tid,t);
         for (Page dirtyPage : dirtyPages) {
+            dirtyPage.markDirty(true,tid);
             PageId pid = dirtyPage.getId();
             if (pageCache.get(pid.hashCode()) != null){
                 pageCache.put(dirtyPage.getId().hashCode(),dirtyPage);
@@ -212,6 +210,7 @@ public class BufferPool {
         DbFile file = Database.getCatalog().getDatabaseFile(t.getRecordId().getPageId().getTableId());
         List<Page> dirtyPages = file.deleteTuple(tid,t);
         for (Page dirtyPage : dirtyPages) {
+            dirtyPage.markDirty(true,tid);
             pageCache.put(dirtyPage.hashCode(),dirtyPage);
         }
     }
