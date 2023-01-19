@@ -8,7 +8,6 @@ import simpledb.transaction.TransactionId;
 
 import java.io.*;
 import java.util.List;
-import java.util.Map;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -36,10 +35,6 @@ public class BufferPool {
 
     private LRUCache<Integer,Page> pageCache;
 
-    private int maxSize = -1;
-
-    private int currSize = 0;
-
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -49,11 +44,9 @@ public class BufferPool {
         // some code goes here
         if (numPages <= 0){
             pageCache = new LRUCache<>(DEFAULT_PAGES);
-            maxSize = DEFAULT_PAGES;
             return;
         }
         pageCache = new LRUCache<>(numPages);
-        maxSize = numPages;
         lockManager = new LockManager();
     }
 
@@ -101,7 +94,7 @@ public class BufferPool {
             if (page == null){
                 throw new DbException("Can not get the page");
             }
-            if (currSize == maxSize){
+            if (pageCache.isFull()){
                 evictPage();
             }
             pageCache.put(pid.hashCode(), page);
@@ -133,6 +126,7 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid) {
         // some code goes here
         // not necessary for lab1|lab2
+        transactionComplete(tid,true);
     }
 
     /** Return true if the specified transaction has a lock on the specified page */
@@ -152,6 +146,18 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid, boolean commit) {
         // some code goes here
         // not necessary for lab1|lab2
+        if(commit){
+            try {
+                flushPages(tid);
+            }catch (IOException e){
+                e.printStackTrace();
+            }
+
+        }else{
+            restorePages(tid);
+        }
+
+        lockManager.removeTransactionLocks(tid);
     }
 
     /**
@@ -180,10 +186,9 @@ public class BufferPool {
             PageId pid = dirtyPage.getId();
             if (pageCache.get(pid.hashCode()) != null){
                 pageCache.put(dirtyPage.getId().hashCode(),dirtyPage);
-            } else if (currSize < maxSize) {
+            } else if (!pageCache.isFull()) {
                 pageCache.put(dirtyPage.getId().hashCode(),dirtyPage);
-                currSize++;
-            }else{
+            }else if(pageCache.isFull()){
                 evictPage();
                 pageCache.put(dirtyPage.getId().hashCode(),dirtyPage);
             }
@@ -223,12 +228,17 @@ public class BufferPool {
     public synchronized void flushAllPages() throws IOException {
         // some code goes here
         // not necessary for lab1
-        for (Map.Entry<Object, LRUCache.DoubleLinkedNode<Integer, Page>> entry : pageCache.entrySet()) {
-            Page page = entry.getValue().value;
-            if (page.isDirty() != null){
+        Node<Integer, Page> node = pageCache.getHeadNode();
+        node = node.getNext();
+
+        while (node != null && node != pageCache.getTailNode()) {
+            Page page = node.getValue();
+            if (page.isDirty() != null) {
                 Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
-                page.markDirty(false,null);
+                page.markDirty(false, null);
             }
+
+            node = node.getNext();
         }
     }
 
@@ -267,6 +277,35 @@ public class BufferPool {
     public synchronized  void flushPages(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
+        Node<Integer,Page> node = pageCache.getHeadNode();
+        node = node.getNext();
+
+        while(node != null && node != pageCache.getTailNode()){
+            Page page = node.getValue();
+            if (tid.equals(page.isDirty())){
+                flushPage(page.getId());
+            }
+
+            node = node.getNext();
+        }
+    }
+
+
+    public synchronized void restorePages(TransactionId tid) {
+        Node<Integer,Page> node = pageCache.getHeadNode();
+        node = node.getNext();
+
+        while(node != null && node != pageCache.getTailNode()){
+            Page page = node.getValue();
+            if (tid.equals(page.isDirty())){
+                discardPage(page.getId());
+                DbFile file = Database.getCatalog().getDatabaseFile(page.getId().getTableId());
+                page = file.readPage(page.getId());
+                pageCache.put(page.getId().hashCode(),page);
+            }
+
+            node = node.getNext();
+        }
     }
 
     /**
@@ -276,15 +315,20 @@ public class BufferPool {
     private synchronized  void evictPage() throws DbException {
         // some code goes here
         // not necessary for lab1
-        Page page = pageCache.removeOldest();
-        try {
-            if(page.isDirty() != null) {
-                flushPage(page.getId());
+        Node<Integer,Page> node = pageCache.getTailNode();
+        node = node.getPrev();
+
+        while(node != null){
+            if (node == pageCache.getHeadNode()){
+                throw new DbException("have no clean page");
             }
-        }catch (IOException e){
-            throw new DbException(e.getMessage());
+
+            if (node.getValue().isDirty() == null){
+                pageCache.remove(node.getKey());
+                return;
+            }
+            node = node.getPrev();
         }
-        page.markDirty(false,null);
     }
 
 }

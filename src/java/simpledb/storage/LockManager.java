@@ -3,6 +3,8 @@ package simpledb.storage;
 import simpledb.common.Permissions;
 import simpledb.transaction.TransactionId;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Vector;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -129,5 +131,15 @@ public class LockManager {
         }
 
         return false;
+    }
+
+    public synchronized void removeTransactionLocks(TransactionId tid){
+        for (Map.Entry<PageId, Vector<Lock>> entry : lockMap.entrySet()) {
+            entry.getValue().removeIf(lock -> lock.getTid().equals(tid));
+            if(entry.getValue().size() == 0){
+                lockMap.remove(entry.getKey());
+            }
+        }
+
     }
 }
