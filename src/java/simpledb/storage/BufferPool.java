@@ -3,6 +3,7 @@ package simpledb.storage;
 import simpledb.common.Database;
 import simpledb.common.Permissions;
 import simpledb.common.DbException;
+import simpledb.log.MyLogger;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
@@ -33,7 +34,7 @@ public class BufferPool {
 
     private LockManager lockManager;
 
-    private LRUCache<Integer,Page> pageCache;
+    private final LRUCache<Integer,Page> pageCache;
 
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -82,9 +83,17 @@ public class BufferPool {
     public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
         // some code goes her
-        while (!lockManager.acquireLock(tid,pid,perm)){
-
+        MyLogger.log.info("start detect dead lock");
+        MyLogger.log.info(tid+"\t"+pid+"\t"+perm);
+        if (lockManager.deadLockDetection(tid,pid,perm)){
+            MyLogger.log.info("dead lock!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            throw new TransactionAbortedException();
         }
+        MyLogger.log.info("start try get lock");
+        while(!lockManager.acquireLock(tid,pid,perm)){
+        }
+
+        MyLogger.log.info("get lock success");
 
         Page page = pageCache.get(pid.hashCode());
         if (page == null) {

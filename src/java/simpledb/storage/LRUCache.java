@@ -26,7 +26,7 @@ class LRUCache<K,V> {
         tail.prev = head;
     }
 
-    public V get(K key) {
+    public synchronized V get(K key) {
         Node<K,V> node = this.cache.get(key);
 
         if (node == null) {
@@ -36,7 +36,7 @@ class LRUCache<K,V> {
         return node.getValue();
     }
 
-    public void put(K key, V value) {
+    public synchronized void put(K key, V value) {
         Node<K,V> node = cache.get(key);
         if (node == null) {
             node = new Node<>(key, value);
@@ -54,7 +54,7 @@ class LRUCache<K,V> {
         }
     }
 
-    public V remove(K key){
+    public synchronized V remove(K key){
         Node<K,V> node = this.cache.get(key);
         if (node == null){
             return null;
@@ -65,19 +65,19 @@ class LRUCache<K,V> {
         return node.getValue();
     }
 
-    public Node<K, V> getHeadNode(){
+    public synchronized Node<K, V> getHeadNode(){
         return this.head;
     }
 
-    public Node<K, V> getTailNode(){
+    public synchronized Node<K, V> getTailNode(){
         return this.tail;
     }
 
-    public int size(){
+    public synchronized int size(){
         return size;
     }
 
-    public Boolean isFull(){
+    public synchronized Boolean isFull(){
         return size >= capacity;
     }
 
