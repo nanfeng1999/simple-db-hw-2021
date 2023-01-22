@@ -2,22 +2,21 @@ package simpledb.storage;
 
 import simpledb.transaction.TransactionId;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.LinkedList;
+import java.util.*;
 
 public class DeadLock {
-    private final Map<TransactionId, List<TransactionId>> cycleDetection;
+    // 可以使用set，用来去重，一个事务不应该等待另一个事务两次资源
+    // 当事务1等待事务2页面1时，它会悬挂在某个地方，不可能存在事务1还等待事务2页面2的情况，因为它必须获取了页面1才会获取页面2
+    private final Map<TransactionId, Set<TransactionId>> cycleDetection;
 
     public DeadLock() {
         cycleDetection = new HashMap<>();
     }
 
     public void addEdge(TransactionId s,TransactionId d){
-        List<TransactionId> list = cycleDetection.get(s);
+        Set<TransactionId> list = cycleDetection.get(s);
         if (list == null){
-            list = new LinkedList<>();
+            list = new HashSet<>();
             list.add(d);
             cycleDetection.put(s,list);
             return;
@@ -27,7 +26,7 @@ public class DeadLock {
     }
 
     public void removeEdge(TransactionId s,TransactionId d){
-        List<TransactionId> list = cycleDetection.get(s);
+        Set<TransactionId> list = cycleDetection.get(s);
         if (list == null){
             return;
         }
@@ -38,16 +37,14 @@ public class DeadLock {
         }
     }
 
-    public void removeVertex(TransactionId vertex){
-        cycleDetection.remove(vertex);
-        for (Map.Entry<TransactionId, List<TransactionId>> entry : cycleDetection.entrySet()) {
-            entry.getValue().remove(vertex);
-        }
+    public void removeVertex(TransactionId tid){
+        cycleDetection.remove(tid);
+
     }
 
     public Boolean cycleDetection(TransactionId vertex){
         int size = cycleDetection.size();
-        //System.out.println(cycleDetection);
+
         HashMap<TransactionId,Boolean> visited = new HashMap<>(size);
 
         return dfs(visited,vertex);
@@ -60,7 +57,7 @@ public class DeadLock {
 
         visited.put(vertex,true);
 
-        List<TransactionId> list = cycleDetection.get(vertex);
+        Set<TransactionId> list = cycleDetection.get(vertex);
         if (list == null){
             return false;
         }

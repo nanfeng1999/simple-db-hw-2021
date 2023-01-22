@@ -36,6 +36,8 @@ public class BufferPool {
 
     private final LRUCache<Integer,Page> pageCache;
 
+    private final Byte lock = (byte) 0;
+
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -83,17 +85,28 @@ public class BufferPool {
     public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
         // some code goes her
-        MyLogger.log.info("start detect dead lock");
-        MyLogger.log.info(tid+"\t"+pid+"\t"+perm);
-        if (lockManager.deadLockDetection(tid,pid,perm)){
-            MyLogger.log.info("dead lock!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-            throw new TransactionAbortedException();
+//        int count = 0;
+//        int count1 = 0;
+        while (true){
+            synchronized (lock){
+//                if (count == 0){
+//                    count++;
+//                    System.out.println(Thread.currentThread().getId()+"\t"+"start  get  lock"+"\t" + tid +"\t" + pid +"\t" + perm);
+//                }
+                if(!lockManager.acquireLock(tid,pid,perm)){
+//                    if (count1 == 0){
+//                        count1++;
+//                        System.out.println(Thread.currentThread().getId()+"\t"+"get   lock  fail"+"\t" + tid +"\t" + pid +"\t" + perm);
+//                    }
+                    lockManager.waitForResources(tid,pid,perm);
+                    Thread.yield();
+                    lockManager.dealWithPotentialDeadlocks(tid);
+                }else{
+                    //System.out.println(Thread.currentThread().getId()+"\t"+"get lock success"+"\t" + tid +"\t" + pid +"\t" + perm);
+                    break;
+                }
+            }
         }
-        MyLogger.log.info("start try get lock");
-        while(!lockManager.acquireLock(tid,pid,perm)){
-        }
-
-        MyLogger.log.info("get lock success");
 
         Page page = pageCache.get(pid.hashCode());
         if (page == null) {
@@ -161,8 +174,9 @@ public class BufferPool {
             }catch (IOException e){
                 e.printStackTrace();
             }
-
+            //System.out.println(Thread.currentThread().getId()+"\t"+tid+" commit success");
         }else{
+            //System.out.println(Thread.currentThread().getId()+"\t"+tid+" abort");
             restorePages(tid);
         }
 
@@ -191,7 +205,6 @@ public class BufferPool {
         DbFile file = Database.getCatalog().getDatabaseFile(tableId);
         List<Page> dirtyPages = file.insertTuple(tid,t);
         for (Page dirtyPage : dirtyPages) {
-            dirtyPage.markDirty(true,tid);
             PageId pid = dirtyPage.getId();
             if (pageCache.get(pid.hashCode()) != null){
                 pageCache.put(dirtyPage.getId().hashCode(),dirtyPage);
@@ -224,7 +237,6 @@ public class BufferPool {
         DbFile file = Database.getCatalog().getDatabaseFile(t.getRecordId().getPageId().getTableId());
         List<Page> dirtyPages = file.deleteTuple(tid,t);
         for (Page dirtyPage : dirtyPages) {
-            dirtyPage.markDirty(true,tid);
             pageCache.put(dirtyPage.hashCode(),dirtyPage);
         }
     }
@@ -269,7 +281,7 @@ public class BufferPool {
      * Flushes a certain page to disk
      * @param pid an ID indicating the page to flush
      */
-    private synchronized  void flushPage(PageId pid) throws IOException {
+    private synchronized void flushPage(PageId pid) throws IOException {
         // some code goes here
         // not necessary for lab1
         Page page = pageCache.get(pid.hashCode());
@@ -283,7 +295,7 @@ public class BufferPool {
 
     /** Write all pages of the specified transaction to disk.
      */
-    public synchronized  void flushPages(TransactionId tid) throws IOException {
+    public synchronized void flushPages(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
         Node<Integer,Page> node = pageCache.getHeadNode();

@@ -28,7 +28,6 @@ public class HeapPage implements Page {
     byte[] oldData;
     private final Byte oldDataLock= (byte) 0;// lock
 
-    private Boolean dirty;
     private TransactionId lastTid;
 
     /**
@@ -258,7 +257,10 @@ public class HeapPage implements Page {
         // not necessary for lab1
         RecordId rid = t.getRecordId();
         // todo: it is easy to forget
-        if (rid.getPageId() != pid){
+        //System.out.println(Thread.currentThread().getId()+"\t"+"delete tuple"+"\t"+t);
+        // todo:这个bug排了我半天
+        if (!rid.getPageId().equals(pid)){
+            //System.out.println("The tuple not exist in this page:"+rid.getPageId()+"\t"+pid);
             throw new DbException("The tuple not exist in this page");
         }
 
@@ -275,7 +277,7 @@ public class HeapPage implements Page {
                 }
                 tuples[tupleNumber] = null;
                 markSlotUsed(tupleNumber, false);
-                setBeforeImage();
+                //setBeforeImage();
             }
         }else{
             throw new DbException("UnCorrect tuple number");
@@ -308,7 +310,7 @@ public class HeapPage implements Page {
                     t.setRecordId(rid);
                     tuples[i] = t;
                     markSlotUsed(i, true);
-                    setBeforeImage();
+                    //setBeforeImage();
                     break;
                 }
             }
@@ -323,10 +325,8 @@ public class HeapPage implements Page {
         // some code goes here
 	// not necessary for lab1
         if (dirty){
-            this.dirty = true;
             this.lastTid = tid;
         }else{
-            this.dirty = false;
             this.lastTid = null;
         }
 

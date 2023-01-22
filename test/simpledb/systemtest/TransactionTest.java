@@ -104,12 +104,13 @@ public class TransactionTest extends SimpleDbTestBase {
                         SeqScan ss2 = new SeqScan(tr.getId(), tableId, "");
 
                         // read the value out of the table
+                        //System.out.println(Thread.currentThread().getId()+"\t"+"query start");
                         Query q1 = new Query(ss1, tr.getId());
                         q1.start();
                         Tuple tup = q1.next();
                         IntField intf = (IntField) tup.getField(0);
                         int i = intf.getValue();
-
+                        //System.out.println(Thread.currentThread().getId()+"\t"+"query end");
                         // create a Tuple so that Insert can insert this new value
                         // into the table.
                         Tuple t = new Tuple(SystemTestUtil.SINGLE_INT_DESCRIPTOR);
@@ -120,7 +121,7 @@ public class TransactionTest extends SimpleDbTestBase {
 
                         // race the other threads to finish the transaction: one will win
                         q1.close();
-
+                        //System.out.println(Thread.currentThread().getId()+"\t"+"delete start");
                         // delete old values (i.e., just one row) from table
                         Delete delOp = new Delete(tr.getId(), ss2);
 
@@ -129,19 +130,20 @@ public class TransactionTest extends SimpleDbTestBase {
                         q2.start();
                         q2.next();
                         q2.close();
-
+                        //System.out.println(Thread.currentThread().getId()+"\t"+"delete end");
                         // set up a Set with a tuple that is one higher than the old one.
                         Set<Tuple> hs = new HashSet<>();
                         hs.add(t);
                         TupleIterator ti = new TupleIterator(t.getTupleDesc(), hs);
 
                         // insert this new tuple into the table
+                        //System.out.println(Thread.currentThread().getId()+"\t"+"insert start");
                         Insert insOp = new Insert(tr.getId(), ti, tableId);
                         Query q3 = new Query(insOp, tr.getId());
                         q3.start();
                         q3.next();
                         q3.close();
-
+                        //System.out.println(Thread.currentThread().getId()+"\t"+"insert end");
                         tr.commit();
                         break;
                     } catch (TransactionAbortedException te) {

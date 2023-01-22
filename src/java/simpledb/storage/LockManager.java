@@ -1,10 +1,13 @@
 package simpledb.storage;
 
+import simpledb.common.Database;
+import simpledb.common.Debug;
 import simpledb.common.Permissions;
-import simpledb.log.MyLogger;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
+import java.io.IOException;
+import java.sql.SQLOutput;
 import java.util.Map;
 import java.util.Vector;
 import java.util.concurrent.ConcurrentHashMap;
@@ -45,7 +48,8 @@ public class LockManager {
         this.deadLock = new DeadLock();
     }
 
-    public synchronized Boolean acquireLock1(TransactionId tid, PageId pid, Permissions permission){
+    public synchronized Boolean acquireLock(TransactionId tid, PageId pid, Permissions permission){
+        // System.out.println(Thread.currentThread().getId()+"\t"+printLockMap());
         Vector<Lock> lockList = lockMap.get(pid);
         // page have no lock
         if (lockList == null){
@@ -145,11 +149,11 @@ public class LockManager {
         }
     }
 
-    public synchronized Boolean deadLock(TransactionId tid, PageId pid,Permissions permission) {
+    public synchronized void waitForResources(TransactionId tid, PageId pid,Permissions permission) {
         Vector<Lock> lockList = lockMap.get(pid);
-        // 当前页面没有事务加锁，不可能发生死锁
+        // 当前页面没有事务加锁，不需要等待资源
         if (lockList == null || lockList.size() == 0){
-            return false;
+            return;
         }
 
         if (permission.equals(Permissions.READ_ONLY)){
@@ -159,91 +163,37 @@ public class LockManager {
                 // 如果页面已经加锁，并且加锁的是同一事务，不管当前加的是读锁还是写锁
                 // 直接返回即可，因为这个资源已经被当前事务占有，不存在死锁问题
                 if (lock.getTid().equals(tid)){
-                    return false;
+                    return;
                 }
                 // 如果是其他事务，并且这个事务加的是写锁，那么本事务需要等待这个事务的资源
-                // 加入边之后检测是否存在死锁，存在的话要删除边因为资源获取失败
                 if (lock.getPermission().equals(Permissions.READ_WRITE)){
                     deadLock.addEdge(tid,lock.getTid());
-                    if(deadLock.cycleDetection(lock.getTid())){
-                        deadLock.removeEdge(tid,lock.getTid());
-                        return true;
-                    }
                 }
             }
 
             // 执行到这说明 这个页面上加的都是读锁 本事务加的也是读锁，不可能发生死锁
-            return false;
         } else {
             // 申请写锁
-            // 如果加的是写锁，分为三种情况可以加锁成功
-            // 1.当前页面只有本事务之前加的读锁，那么读锁升级为写锁
-            // 2.当前页面只有本事务之前加的写锁，直接加锁成功
-            // 3.当前页面没有事务加锁
-            // 其他情况全部会加锁失败
-            if(lockList.size() == 1){
-                // 如果当前只有本事务占有这个页面，不管是读锁还是写锁，都已经获取了资源
-                // 所以不可能发生死锁
-                Lock lock = lockList.get(0);
-                if (lock.getTid().equals(tid)){
-                    return false;
-                }
-            }
-
-            // 如果占有的是其他事务，因为本事务是写锁，那么必定需要等待资源
-            // 加入边集，判断是否出现死锁
-            Vector<Lock> tmpList = new Vector<>();
             for (Lock lock : lockList) {
+                // 如果存在本事务，要么是本事务之前加了读锁 要么是本事务之前加了写锁 加了写锁只能有一个锁在队列中 直接跳过即可
+                // 如果队列中都是读锁，需要等到其他事务的读锁
+                if(lock.getTid().equals(tid)) continue;
                 deadLock.addEdge(tid,lock.getTid());
-                tmpList.add(lock);
-                if(deadLock.cycleDetection(lock.getTid())){
-                    for (Lock tmp : tmpList) {
-                        deadLock.removeEdge(tid,tmp.getTid());
-                    }
-                    return true;
-                }
             }
 
             // 执行到这里说明没有死锁，那么申请资源成功，同时返回无死锁标志
-            return false;
         }
+        //System.out.println(Thread.currentThread().getId()+"\t"+deadLock);
     }
 
-    public synchronized void waitResources(TransactionId tid, PageId pid){
-        Vector<Lock> lockList = lockMap.get(pid);
-        if (lockList == null){
-            return;
+    public synchronized void dealWithPotentialDeadlocks(TransactionId tid) throws TransactionAbortedException {
+        if (deadLock.cycleDetection(tid)){
+            // 可以不删除其他顶点到这个顶点的边 因为遍历到了其他定点发现找不到当前删除的这个边 对结果没有任何影响
+            deadLock.removeVertex(tid);
+            //System.out.println(Thread.currentThread().getId()+"\t"+"dead lock");
+            //Database.getBufferPool().transactionComplete(tid, false);
+            throw new TransactionAbortedException();
         }
-
-        for (Lock lock : lockList) {
-            deadLock.addEdge(tid, lock.getTid());
-        }
-        //System.out.println("wait:"+deadLock);
     }
-
-    public synchronized void releaseResources(TransactionId tid, PageId pid){
-        Vector<Lock> lockList = lockMap.get(pid);
-        MyLogger.log.info("release1:"+deadLock);
-
-        for (Lock lock : lockList) {
-            deadLock.removeEdge(lock.getTid(),tid);
-        }
-        MyLogger.log.info("release2:"+deadLock);
-    }
-
-    public synchronized Boolean deadLockDetection(TransactionId tid, PageId pid,Permissions permission) {
-        //MyLogger.log.info("wait1:"+deadLock);
-        Boolean result = deadLock(tid, pid, permission);
-        //MyLogger.log.info("wait2:"+deadLock);
-        return result;
-    }
-
-
-    public synchronized Boolean acquireLock(TransactionId tid, PageId pid, Permissions permission) {
-        Boolean result = acquireLock1(tid,pid,permission);
-        if (result){
-            releaseResources(tid,pid);
-        }
-        return result;
-    }
+    
 }
