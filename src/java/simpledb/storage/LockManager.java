@@ -195,5 +195,5 @@ public class LockManager {
             throw new TransactionAbortedException();
         }
     }
-    
+
 }
