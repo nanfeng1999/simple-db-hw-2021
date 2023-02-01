@@ -34,7 +34,7 @@ public class BTreeHeaderPage implements Page {
 	private int prevPage; // previous header page or 0
 
 	byte[] oldData;
-	private final Byte oldDataLock= (byte) 0;
+	private final Byte oldDataLock = (byte) 0;
 
 	/**
 	 * Create a BTreeHeaderPage from a set of bytes of data read from disk.

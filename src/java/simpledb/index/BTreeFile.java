@@ -188,7 +188,38 @@ public class BTreeFile implements DbFile {
                                        Field f)
 					throws DbException, TransactionAbortedException {
 		// some code goes here
-        return null;
+		// 找到了最下层的叶子节点 直接返回即可
+		if (pid.pgcateg() == BTreePageId.LEAF) {
+			return (BTreeLeafPage) getPage(tid, dirtypages, pid, perm);
+		}
+
+		// 如果是内部页
+		BTreeInternalPage page = (BTreeInternalPage) getPage(tid, dirtypages, pid, perm);
+		Iterator<BTreeEntry> iter = page.iterator();
+
+		// 如果是空 直接搜索左子树第一个
+		if (f == null) {
+			if(iter.hasNext()){
+				return findLeafPage(tid,dirtypages,iter.next().getLeftChild(), perm, null);
+			}
+			return null;
+		}
+
+		BTreeEntry entry = null;
+		while(iter.hasNext()){
+			// 从左到右 依次比较 第一个大于元组的上一个节点的左节点即为所求目标
+			entry = iter.next();
+			Field target = entry.getKey();
+			if (f.compare(Op.LESS_THAN_OR_EQ,target)){
+				return findLeafPage(tid,dirtypages,entry.getLeftChild(),perm,f);
+			}
+		}
+
+		if (entry == null){
+			return null;
+		}
+
+		return findLeafPage(tid,dirtypages,entry.getRightChild(),perm,f);
 	}
 	
 	/**
@@ -1080,6 +1111,8 @@ class BTreeFileIterator extends AbstractDbFileIterator {
 	 * Open this iterator by getting an iterator on the first leaf page
 	 */
 	public void open() throws DbException, TransactionAbortedException {
+		// 根节点有可能是中间节点 也有可能是叶子节点 如果只有一个节点 那么它是叶子节点
+		// 否则 它是中间节点
 		BTreeRootPtrPage rootPtr = (BTreeRootPtrPage) Database.getBufferPool().getPage(
 				tid, BTreeRootPtrPage.getId(f.getId()), Permissions.READ_ONLY);
 		BTreePageId root = rootPtr.getRootId();
