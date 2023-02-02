@@ -23,7 +23,7 @@ import java.io.Serializable;
 public class BTreeEntry implements Serializable {
 
 	private static final long serialVersionUID = 1L;
-	
+
 	/**
 	 * The key of this entry
 	 * */

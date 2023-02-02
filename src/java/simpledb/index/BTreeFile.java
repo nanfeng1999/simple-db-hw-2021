@@ -211,6 +211,7 @@ public class BTreeFile implements DbFile {
 			entry = iter.next();
 			Field target = entry.getKey();
 			if (f.compare(Op.LESS_THAN_OR_EQ,target)){
+				// 左边是小于等于 当前索引的 孩子节点
 				return findLeafPage(tid,dirtypages,entry.getLeftChild(),perm,f);
 			}
 		}
@@ -270,8 +271,52 @@ public class BTreeFile implements DbFile {
 		// the new entry.  getParentWithEmtpySlots() will be useful here.  Don't forget to update
 		// the sibling pointers of all the affected leaf pages.  Return the page into which a 
 		// tuple with the given key field should be inserted.
-        return null;
-		
+
+		// 只有该页面满了之后才会调用 调用这个函数分裂当前页面 左边一半 右边一半 右边的第一个放到上面去
+		int tupleNum = page.getNumTuples() / 2;
+
+		// 分裂新页
+		BTreeLeafPage newPage = (BTreeLeafPage) getEmptyPage(tid,dirtypages,BTreePageId.LEAF);
+		Iterator<Tuple> reverseIter = page.reverseIterator();
+		Tuple lastTuple = null;// 记录新page最新插入的元组
+
+		while(reverseIter.hasNext() && tupleNum > 0) {
+			lastTuple = reverseIter.next();
+			page.deleteTuple(lastTuple);
+			newPage.insertTuple(lastTuple);
+			tupleNum--;
+		}
+
+		// 这个时候多了一页 那么就需要在父节点多加入一个索引
+		// 如果父节点是根节点 那么表示当前插入的是唯一的一个叶子节点
+		// 所以需要创建一个新的内部页 这个新的内部页会变成根节点指向的页 之前的叶子节点会变成它的孩子
+		// 如果根节点是内部页 那么直接获取 如果这个内部页已满 需要进行分裂
+		BTreeInternalPage parentInternalPage = getParentWithEmptySlots(tid,dirtypages,page.getParentId(),field);
+		// 开始插入新的entry
+		BTreeEntry newEntry = new BTreeEntry(lastTuple.getField(keyField),page.getId(),newPage.getId());
+		parentInternalPage.insertEntry(newEntry);
+
+		// 修改左右指针和父指针
+		// 有可能是中间某个页面开始分裂的
+		if (page.getRightSiblingId() != null){
+			BTreeLeafPage rightPage = (BTreeLeafPage)getPage(tid,dirtypages,page.getRightSiblingId(),Permissions.READ_WRITE);
+			rightPage.setLeftSiblingId(newPage.getId());
+			newPage.setRightSiblingId(rightPage.getId());
+			dirtypages.put(rightPage.getId(),rightPage);
+		}
+		page.setRightSiblingId(newPage.getId());
+		newPage.setLeftSiblingId(page.getId());
+		newPage.setParentId(parentInternalPage.getId());
+
+		// 更新脏页
+		dirtypages.put(page.getId(),page);
+		dirtypages.put(newPage.getId(),newPage);
+		dirtypages.put(parentInternalPage.getId(),parentInternalPage);
+
+		if (field.compare(Op.LESS_THAN_OR_EQ,lastTuple.getField(keyField))){
+			return page;
+		}
+        return newPage;
 	}
 	
 	/**
@@ -308,7 +353,44 @@ public class BTreeFile implements DbFile {
 		// the parent pointers of all the children moving to the new page.  updateParentPointers()
 		// will be useful here.  Return the page into which an entry with the given key field
 		// should be inserted.
-		return null;
+
+		int numEntries = page.getNumEntries() / 2;
+
+		BTreeInternalPage newPage = (BTreeInternalPage) getEmptyPage(tid,dirtypages,BTreePageId.INTERNAL);
+
+		// 开始分裂
+		Iterator<BTreeEntry> reverseIter = page.reverseIterator();
+		while(reverseIter.hasNext() && numEntries > 0){
+			BTreeEntry entry = reverseIter.next();
+			page.deleteKeyAndRightChild(entry);
+			newPage.insertEntry(entry);
+			numEntries--;
+		}
+
+		// 取到这个key 往上push
+		BTreeEntry upEntry = reverseIter.next();
+		page.deleteKeyAndRightChild(upEntry);
+		upEntry.setLeftChild(page.getId());
+		upEntry.setRightChild(newPage.getId());
+
+		// 递归调用 entry设置新的左右孩子 插入push的entry
+		BTreeInternalPage parentInternalPage = getParentWithEmptySlots(tid,dirtypages,page.getParentId(),upEntry.getKey());
+		page.setParentId(parentInternalPage.getId());
+		newPage.setParentId(parentInternalPage.getId());
+		parentInternalPage.insertEntry(upEntry);
+
+		// 更新新页面中的孩子的父指针
+		updateParentPointers(tid,dirtypages,newPage);
+
+		// 更新脏页
+		dirtypages.put(page.getId(),page);
+		dirtypages.put(newPage.getId(),newPage);
+		dirtypages.put(parentInternalPage.getId(),parentInternalPage);
+
+		if (field.compare(Op.LESS_THAN_OR_EQ,upEntry.getKey())){
+			return page;
+		}
+		return newPage;
 	}
 	
 	/**
@@ -330,7 +412,7 @@ public class BTreeFile implements DbFile {
 	 */
 	private BTreeInternalPage getParentWithEmptySlots(TransactionId tid, Map<PageId, Page> dirtypages,
 			BTreePageId parentId, Field field) throws DbException, IOException, TransactionAbortedException {
-		
+
 		BTreeInternalPage parent = null;
 		
 		// create a parent node if necessary
@@ -462,6 +544,7 @@ public class BTreeFile implements DbFile {
 		BTreeRootPtrPage rootPtr = getRootPtrPage(tid, dirtypages);
 		BTreePageId rootId = rootPtr.getRootId();
 
+		// 根节点刚刚创建
 		if(rootId == null) { // the root has just been created, so set the root pointer to point to it		
 			rootId = new BTreePageId(tableid, numPages(), BTreePageId.LEAF);
 			rootPtr = (BTreeRootPtrPage) getPage(tid, dirtypages, BTreeRootPtrPage.getId(tableid), Permissions.READ_WRITE);
@@ -861,12 +944,14 @@ public class BTreeFile implements DbFile {
 	 */
 	BTreeRootPtrPage getRootPtrPage(TransactionId tid, Map<PageId, Page> dirtypages) throws DbException, IOException, TransactionAbortedException {
 		synchronized(this) {
+			// 这个时候说明是空文件
 			if(f.length() == 0) {
 				// create the root pointer page and the root page
 				BufferedOutputStream bw = new BufferedOutputStream(
 						new FileOutputStream(f, true));
 				byte[] emptyRootPtrData = BTreeRootPtrPage.createEmptyPageData();
 				byte[] emptyLeafData = BTreeLeafPage.createEmptyPageData();
+				// 写入空的根指针和叶子节点
 				bw.write(emptyRootPtrData);
 				bw.write(emptyLeafData);
 				bw.close();
@@ -874,6 +959,7 @@ public class BTreeFile implements DbFile {
 		}
 
 		// get a read lock on the root pointer page
+		//
 		return (BTreeRootPtrPage) getPage(tid, dirtypages, BTreeRootPtrPage.getId(tableid), Permissions.READ_ONLY);
 	}
 
@@ -965,7 +1051,8 @@ public class BTreeFile implements DbFile {
 		rf.write(BTreePage.createEmptyPageData());
 		rf.close();
 		
-		// make sure the page is not in the buffer pool	or in the local cache		
+		// make sure the page is not in the buffer pool	or in the local cache
+		// 为啥要确保不在
 		Database.getBufferPool().discardPage(newPageId);
 		dirtypages.remove(newPageId);
 		
