@@ -41,9 +41,12 @@ public class BTreeInternalPage extends BTreePage {
 			prev = f;
 		}
 
+//		System.out.println("111");
         assert null == upperBound || null == prev || (prev.compare(Op.LESS_THAN_OR_EQ, upperBound));
-
+//		System.out.println(String.format("%b %b %b",!checkOccupancy,depth <= 0,(getNumEntries() >= getMaxEntries() / 2)));
+//		System.out.println(String.format("%d %d----",getNumEntries(), getMaxEntries() / 2));
         assert !checkOccupancy || depth <= 0 || (getNumEntries() >= getMaxEntries() / 2);
+//		System.out.println("222");
 	}
 	
 	/**

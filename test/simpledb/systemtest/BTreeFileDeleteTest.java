@@ -233,6 +233,7 @@ public class BTreeFileDeleteTest extends SimpleDbTestBase {
 			it = rightChild.iterator();
 			count++;
 		}
+
 		assertTrue(leftChild.getNumEmptySlots() > 203);
 		assertTrue(rightChild.getNumEmptySlots() <= 252);
 		BTreeChecker.checkRep(bf, tid, new HashMap<>(), true);
