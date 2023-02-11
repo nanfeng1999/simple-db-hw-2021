@@ -124,6 +124,7 @@ public class HeapFile implements DbFile {
         rf.seek(offset);
         rf.write(data);
         rf.close();
+        page.markDirty(false,null);
     }
 
     /**
@@ -153,6 +154,9 @@ public class HeapFile implements DbFile {
 
         HeapPage currPage = new HeapPage(new HeapPageId(getId(),numPages()),HeapPage.createEmptyPageData());
         currPage.insertTuple(t);
+        // todo 需不需要加入 我觉得需要加入
+        // currPage.markDirty(true,tid);
+        // 如果这个事务后面abort怎么办呢
         writePage(currPage);
 
         return new ArrayList<>(Arrays.asList(currPage));

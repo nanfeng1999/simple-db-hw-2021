@@ -37,6 +37,8 @@ public class BufferPool {
 
     private final Byte lock = (byte) 0;
 
+    private static final int DEFAULT_TIME_OUT_TH = 30 * 1000;
+
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -84,24 +86,17 @@ public class BufferPool {
     public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
         // some code goes her
-//        int count = 0;
-//        int count1 = 0;
         while (true){
             synchronized (lock){
-//                if (count == 0){
-//                    count++;
-//                    System.out.println(Thread.currentThread().getId()+"\t"+"start  get  lock"+"\t" + tid +"\t" + pid +"\t" + perm);
-//                }
                 if(!lockManager.acquireLock(tid,pid,perm)){
-//                    if (count1 == 0){
-//                        count1++;
-//                        System.out.println(Thread.currentThread().getId()+"\t"+"get   lock  fail"+"\t" + tid +"\t" + pid +"\t" + perm);
-//                    }
                     lockManager.waitForResources(tid,pid,perm);
                     Thread.yield();
                     lockManager.dealWithPotentialDeadlocks(tid);
+
+                    if (isTimeOutTransaction(tid)) {
+                        throw new TransactionAbortedException();
+                    }
                 }else{
-                    //System.out.println(Thread.currentThread().getId()+"\t"+"get lock success"+"\t" + tid +"\t" + pid +"\t" + perm);
                     break;
                 }
             }
@@ -122,6 +117,14 @@ public class BufferPool {
         }
 
         return page;
+    }
+
+    private boolean isTimeOutTransaction(TransactionId tid) {
+        if (System.currentTimeMillis() - tid.getStartTime() > DEFAULT_TIME_OUT_TH) {
+            return true;
+        } else {
+            return false;
+        }
     }
 
     /**
@@ -173,9 +176,7 @@ public class BufferPool {
             }catch (IOException e){
                 e.printStackTrace();
             }
-            //System.out.println(Thread.currentThread().getId()+"\t"+tid+" commit success");
         }else{
-            //System.out.println(Thread.currentThread().getId()+"\t"+tid+" abort");
             restorePages(tid);
         }
 
@@ -254,8 +255,10 @@ public class BufferPool {
         while (node != null && node != pageCache.getTailNode()) {
             Page page = node.getValue();
             if (page.isDirty() != null) {
-                Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
-                page.markDirty(false, null);
+                flushPage(page.getId());
+                // todo 不能这样子写 因为这里没有写入log文件
+                // Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
+                // page.markDirty(false, null);
             }
 
             node = node.getNext();
@@ -283,13 +286,20 @@ public class BufferPool {
     private synchronized void flushPage(PageId pid) throws IOException {
         // some code goes here
         // not necessary for lab1
+        // 这个没有事务控制 不能在这里面调用 setBeforeImage() 函数
         Page page = pageCache.get(pid.hashCode());
         if (page == null){
             throw new IOException("UnCorrected page id");
         }
 
+        // 如果有赃页 写入磁盘之前先把修改前和修改后的内容写到日志中去
+        TransactionId dirtier = page.isDirty();
+        if (dirtier != null){
+            Database.getLogFile().logWrite(dirtier, page.getBeforeImage(), page);
+            Database.getLogFile().force();// 强制写入磁盘
+        }
+
         Database.getCatalog().getDatabaseFile(pid.getTableId()).writePage(page);
-        page.markDirty(false,null);
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -297,19 +307,26 @@ public class BufferPool {
     public synchronized void flushPages(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
+        // 这个有事务控制 需要调用 setBeforeImage() 函数
         Node<Integer,Page> node = pageCache.getHeadNode();
         node = node.getNext();
 
         while(node != null && node != pageCache.getTailNode()){
             Page page = node.getValue();
-            if (tid.equals(page.isDirty())){
-                flushPage(page.getId());
+            TransactionId dirtier = page.isDirty();
+            // 如果是本事务修改的赃页 那么需要增加log文件 和 写入磁盘中
+            Page before = page.getBeforeImage();
+            page.setBeforeImage();
+            if (dirtier != null && dirtier.equals(tid)){
+                // todo:这一行代码不能放在这里
+                // page.setBeforeImage();
+                Database.getLogFile().logWrite(dirtier, before, page);
+                Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
             }
 
             node = node.getNext();
         }
     }
-
 
     public synchronized void restorePages(TransactionId tid) {
         Node<Integer,Page> node = pageCache.getHeadNode();

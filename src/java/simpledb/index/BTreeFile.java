@@ -287,6 +287,8 @@ public class BTreeFile implements DbFile {
             tupleNum--;
         }
 
+        //  todo
+        // lastTuple = reverseIter.next();
         // 这个时候多了一页 那么就需要在父节点多加入一个索引
         // 如果父节点是根节点 那么表示当前插入的是唯一的一个叶子节点
         // 所以需要创建一个新的内部页 这个新的内部页会变成根节点指向的页 之前的叶子节点会变成它的孩子
@@ -306,7 +308,7 @@ public class BTreeFile implements DbFile {
         }
         page.setRightSiblingId(newPage.getId());
         newPage.setLeftSiblingId(page.getId());
-        newPage.setParentId(parentInternalPage.getId());
+        // newPage.setParentId(parentInternalPage.getId());
 
         // todo
         updateParentPointer(tid, dirtypages, parentInternalPage.getId(), page.getId());
@@ -379,13 +381,13 @@ public class BTreeFile implements DbFile {
 
         // 递归调用 entry设置新的左右孩子 插入push的entry
         BTreeInternalPage parentInternalPage = getParentWithEmptySlots(tid,dirtypages,page.getParentId(),upEntry.getKey());
-        page.setParentId(parentInternalPage.getId());
-        newPage.setParentId(parentInternalPage.getId());
+        //page.setParentId(parentInternalPage.getId());
+        //newPage.setParentId(parentInternalPage.getId());
         parentInternalPage.insertEntry(upEntry);
 
         // 更新新页面中的孩子的父指针
         updateParentPointers(tid,dirtypages,newPage);
-        updateParentPointers(tid,dirtypages,page);
+        //updateParentPointers(tid,dirtypages,page);
         updateParentPointers(tid,dirtypages,parentInternalPage);
 
         // 更新脏页
@@ -714,12 +716,7 @@ public class BTreeFile implements DbFile {
             stealNum--;
         }
 
-        // 修改父节点的值
-        if (isRightSibling) {
-            entry.setKey(lastTuple.getField(keyField));
-        }else{
-            entry.setKey(siblingIter.next().getField(keyField));
-        }
+        entry.setKey(lastTuple.getField(keyField));
 
         parent.updateEntry(entry);
     }
@@ -808,18 +805,12 @@ public class BTreeFile implements DbFile {
         }
 
         Iterator<BTreeEntry> leftReverseIter = leftSibling.reverseIterator();
-        Iterator<BTreeEntry> iter = page.iterator();
-        assert leftReverseIter.hasNext();
-        assert iter.hasNext();
 
-        BTreeEntry leftLastEntry = leftReverseIter.next();
-        BTreeEntry firstEntry = iter.next();
-
-        BTreeEntry newEntry = new BTreeEntry(parentEntry.getKey(),leftLastEntry.getRightChild(),firstEntry.getLeftChild());
+        BTreeEntry newEntry = new BTreeEntry(
+                parentEntry.getKey(),
+                leftSibling.reverseIterator().next().getRightChild(),
+                page.iterator().next().getLeftChild());
         page.insertEntry(newEntry);
-
-        leftSibling.deleteKeyAndRightChild(leftLastEntry);
-        page.insertEntry(leftLastEntry);
         stealNum--;
 
         while(leftReverseIter.hasNext() && stealNum > 0){
@@ -829,7 +820,6 @@ public class BTreeFile implements DbFile {
             stealNum--;
         }
 
-        assert leftReverseIter.hasNext();
         BTreeEntry upEntry = leftReverseIter.next();
         leftSibling.deleteKeyAndRightChild(upEntry);
         parentEntry.setKey(upEntry.getKey());
@@ -874,18 +864,12 @@ public class BTreeFile implements DbFile {
         }
 
         Iterator<BTreeEntry> rightIter = rightSibling.iterator();
-        Iterator<BTreeEntry> reverseIter = page.reverseIterator();
-        assert rightIter.hasNext();
-        assert reverseIter.hasNext();
 
-        BTreeEntry rightFirstEntry = rightIter.next();
-        BTreeEntry lastEntry = reverseIter.next();
-
-        BTreeEntry newEntry = new BTreeEntry(parentEntry.getKey(),lastEntry.getRightChild(),rightFirstEntry.getLeftChild());
+        BTreeEntry newEntry = new BTreeEntry(
+                parentEntry.getKey(),
+                page.reverseIterator().next().getRightChild(),
+                rightSibling.iterator().next().getLeftChild());
         page.insertEntry(newEntry);
-        // 使用deleteKeyAndLeftChild 和 deleteKeyAndRightChild好像都行
-        rightSibling.deleteKeyAndLeftChild(rightFirstEntry);
-        page.insertEntry(rightFirstEntry);
         stealNum--;
 
         while(rightIter.hasNext() && stealNum > 0){
@@ -895,13 +879,13 @@ public class BTreeFile implements DbFile {
             stealNum--;
         }
 
-        assert rightIter.hasNext();
         BTreeEntry upEntry = rightIter.next();
         rightSibling.deleteKeyAndLeftChild(upEntry);
         parentEntry.setKey(upEntry.getKey());
         parent.updateEntry(parentEntry);
 
         updateParentPointers(tid,dirtypages,page);
+        // todo 这个为什么需要更新？
         updateParentPointers(tid,dirtypages,rightSibling);
 
         dirtypages.put(rightSibling.getId(),rightSibling);
@@ -999,21 +983,14 @@ public class BTreeFile implements DbFile {
         // and make the right page available for reuse
         // Delete the entry in the parent corresponding to the two pages that are merging -
 
-        Iterator<BTreeEntry> leftReverseIter = leftPage.reverseIterator();
         Iterator<BTreeEntry> rightIter = rightPage.iterator();
 
-        // 找到右边页面第一个Entry 和左边页面最后一个Entry
-        assert leftReverseIter.hasNext();
-        assert rightIter.hasNext();
-        BTreeEntry lastLeftPageEntry = leftReverseIter.next();
-        BTreeEntry firstRightPageEntry = rightIter.next();
-
         // 复制一份父节点的entry 制定左右指向的page 并把这个entry插入到左边的页面中
-        BTreeEntry parentEntryCopy = new BTreeEntry(parentEntry.getKey(),lastLeftPageEntry.getRightChild(),firstRightPageEntry.getLeftChild());
+        BTreeEntry parentEntryCopy = new BTreeEntry(
+                parentEntry.getKey(),
+                leftPage.reverseIterator().next().getRightChild(),
+                rightPage.iterator().next().getLeftChild());
         leftPage.insertEntry(parentEntryCopy);
-
-        rightPage.deleteKeyAndLeftChild(firstRightPageEntry);
-        leftPage.insertEntry(firstRightPageEntry);
 
         // 把右边页面中的entry全部删除并插入到左边的页面
         while(rightIter.hasNext()){
@@ -1022,13 +999,15 @@ public class BTreeFile implements DbFile {
             leftPage.insertEntry(entry);
         }
 
+        // todo 这一句要放在上面 不能放在下面
+        // 更新孩子的父指针
+        updateParentPointers(tid,dirtypages,leftPage);
         // 刪除父entry
         // 这句话需要加入 因为后续会判断页面中的数值是否一致 如果不设置为空页 那么到时候会遍历到这个页得到错误的数据
         setEmptyPage(tid,dirtypages,rightPage.getId().getPageNumber());
         deleteParentEntry(tid,dirtypages,leftPage,parent,parentEntry);
 
-        // 更新孩子的父指针
-        updateParentPointers(tid,dirtypages,leftPage);
+
         // 添加脏页
         dirtypages.put(leftPage.getId(),leftPage);
         dirtypages.put(parent.getId(),parent);

@@ -12,9 +12,11 @@ public class TransactionId implements Serializable {
 
     static final AtomicLong counter = new AtomicLong(0);
     final long myid;
+	final long startTime;
 
     public TransactionId() {
         myid = counter.getAndIncrement();
+		startTime = System.currentTimeMillis();
     }
 
     public long getId() {
@@ -39,5 +41,9 @@ public class TransactionId implements Serializable {
 		int result = 1;
 		result = prime * result + (int) (myid ^ (myid >>> 32));
 		return result;
+	}
+
+	public long getStartTime() {
+		return startTime;
 	}
 }

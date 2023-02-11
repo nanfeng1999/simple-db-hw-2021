@@ -123,35 +123,35 @@ class Node<K,V> {
         this.value = value;
     }
 
-    public Node<K,V> getNext(){
+    public synchronized Node<K,V> getNext(){
         return this.next;
     }
 
-    public Boolean hasNext(){
+    public synchronized Boolean hasNext(){
         return this.next != null;
     }
 
-    public Node<K,V> getPrev(){
+    public synchronized Node<K,V> getPrev(){
         return this.prev;
     }
 
-    public Boolean hasPrev(){
+    public synchronized Boolean hasPrev(){
         return this.next != null;
     }
 
-    public K getKey(){
+    public synchronized K getKey(){
         return this.key;
     }
 
-    public V getValue(){
+    public synchronized V getValue(){
         return this.value;
     }
 
-    public void setKey(K key){
+    public synchronized void setKey(K key){
         this.key = key;
     }
 
-    public void setValue(V value){
+    public synchronized void setValue(V value){
         this.value = value;
     }
 
