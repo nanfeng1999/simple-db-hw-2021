@@ -80,22 +80,6 @@ public class LogTest extends SimpleDbTestBase {
         t.commit();
     }
 
-    void print(HeapFile hf) throws TransactionAbortedException, DbException, IOException {
-        Transaction t = new Transaction();
-        t.start();
-        SeqScan scan = new SeqScan(t.getId(), hf.getId(), "");
-        scan.open();
-        System.out.println("---------------------------");
-        while(scan.hasNext()){
-            Tuple tu = scan.next();
-            int x = ((IntField)tu.getField(0)).getValue();
-            System.out.println(x);
-        }
-        System.out.println("---------------------------");
-        scan.close();
-        t.commit();
-    }
-
     void abort(Transaction t)
         throws IOException {
         // t.transactionComplete(true); // abort
@@ -299,7 +283,6 @@ public class LogTest extends SimpleDbTestBase {
             throws IOException, DbException, TransactionAbortedException {
         setup();
         doInsert(hf1, 1, 2);
-        print(hf1);
         // *** Test:
         // T1 inserts and commits
         // T2 inserts but aborts
@@ -307,11 +290,8 @@ public class LogTest extends SimpleDbTestBase {
         // only T1 and T3 data should be there
 
         doInsert(hf1, 5, -1);
-        print(hf1);
         dontInsert(hf1, 6);
-        print(hf1);
         doInsert(hf1, 7, -1);
-        print(hf1);
 
         Transaction t = new Transaction();
         t.start();
@@ -325,7 +305,6 @@ public class LogTest extends SimpleDbTestBase {
         // crash: should not change visible data
 
         crash();
-        print(hf1);
         t = new Transaction();
         t.start();
         look(hf1, t, 1, true);

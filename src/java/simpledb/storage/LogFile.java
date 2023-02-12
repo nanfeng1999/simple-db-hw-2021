@@ -478,8 +478,6 @@ public class LogFile {
                             Page before = readPageData(raf);
                             readPageData(raf);
                             if (record_tid.equals(tid.getId())) {
-                                System.out.printf("transaction %d\tpage %d recover\n",tid.getId(),before.getId().getPageNumber());
-                                //before.markDirty(false, null);
                                 Database.getCatalog().getDatabaseFile(before.getId().getTableId()).writePage(before);
                                 // todo: 需要加入这一句 把在缓存中的存有事务旧数据的赃页丢弃
                                 Database.getBufferPool().discardPage(before.getId());
@@ -525,132 +523,71 @@ public class LogFile {
                 // some code goes here
                 // 有可能存在事务提交的时候赃页刷入到磁盘刷到一半 这个时候崩溃了 那么启动的时候就需要恢复操作
                 // 这个时候提交也是被当做提交失败来看 所以需要恢复到事务提交之前的状态
-                //
-                raf.seek(0);
-                Long checkPointLocation = raf.readLong();
-                Map<Long, List<Page>> dirtyPages = new HashMap<>();
-                Map<PageId, Page> beforePages = new HashMap<>();
+                raf = new RandomAccessFile(logFile, "rw");
+                //已提交的事务id集合
+                Set<Long> committedId = new HashSet<>();
 
-                if (checkPointLocation != -1L) {
-                    raf.seek(checkPointLocation);
-                    int cpType = raf.readInt();
-                    long cpTid = raf.readLong();
+                Map<Long, List<Page>> beforePages = new HashMap<>();
+                Map<Long, List<Page>> afterPages = new HashMap<>();
+                // 读取checkpoint
+                raf.readLong();
 
-                    if (cpType != CHECKPOINT_RECORD) {
-                        throw new RuntimeException("Checkpoint pointer does not point to checkpoint record");
-                    }
-
-                    int numOutstanding = raf.readInt();
-                    for (int i = 0; i < numOutstanding; i++) {
-                        long tid = raf.readLong();
-                        long firstLogRecord = raf.readLong();
-                        this.tidToFirstLogRecord.put(tid, firstLogRecord);
-                    }
-
-                    for (Map.Entry<Long, Long> tidToRecordOffset : this.tidToFirstLogRecord.entrySet()) {
-                        Long tid = tidToRecordOffset.getKey();
-                        Long firstLogRecord = tidToRecordOffset.getValue();
-                        raf.seek(firstLogRecord);
-                        try {
-                            while (true) {
-                                Long startOffset = raf.getFilePointer();
-                                Integer type = raf.readInt();
-                                Long recordTid = raf.readLong();
-                                Long recordOffset = -1L;
-
-                                switch (type) {
-                                    case BEGIN_RECORD:
-                                        recordOffset = raf.readLong();
-                                        dirtyPages.remove(recordTid);
-                                        this.tidToFirstLogRecord.remove(recordTid);
-                                        break;
-                                    case ABORT_RECORD:
-                                        recordOffset = raf.readLong();
-
-                                        for (Page after : dirtyPages.get(recordTid)) {
-                                            Page before = beforePages.get(after.getId());
-                                            if (before != null) {
-                                                Database.getCatalog()
-                                                        .getDatabaseFile(before.getId().getTableId())
-                                                        .writePage(before);
-                                            } else {
-                                                Debug.log("Can not find before image! ERROR");
-                                            }
-                                        }
-
-                                        dirtyPages.remove(recordTid);
-                                        this.tidToFirstLogRecord.remove(recordTid);
-                                        break;
-                                    case COMMIT_RECORD:
-                                        recordOffset = raf.readLong();
-                                        if (dirtyPages.get(recordTid) != null) {
-                                            for (Page after : dirtyPages.get(recordTid)) {
-                                                Database.getCatalog()
-                                                        .getDatabaseFile(after.getId().getTableId())
-                                                        .writePage(after);
-                                            }
-                                            dirtyPages.remove(recordTid);
-                                            this.tidToFirstLogRecord.remove(recordTid);
-                                        }
-                                        break;
-                                    case UPDATE_RECORD:
-                                        Page before = readPageData(raf);
-                                        Page after = readPageData(raf);
-                                        recordOffset = raf.readLong();
-                                        this.tidToFirstLogRecord.put(recordTid, startOffset);
-                                        dirtyPages.computeIfAbsent(recordTid, k -> new ArrayList<>()).add(after);
-                                        beforePages.put(before.getId(), before);
-                                        break;
-                                    default:
-                                        break;
-                                }
-                            }
-                        } catch (EOFException e) {
-                        }
-                    }
-                } else {
+                while (true) {
                     try {
-                        while (true) {
-                            Long startOffset = raf.getFilePointer();
-                            Integer type = raf.readInt();
-                            Long record_tid = raf.readLong();
-
-                            Long curOffset = -1L;
-                            switch (type) {
-                                case BEGIN_RECORD:
-                                case ABORT_RECORD:
-                                    curOffset = raf.readLong();
-                                    dirtyPages.remove(record_tid);
-                                    this.tidToFirstLogRecord.remove(record_tid);
-                                    break;
-                                case COMMIT_RECORD:
-                                    curOffset = raf.readLong();
-                                    if (dirtyPages.get(record_tid) != null) {
-
-                                        for (Page after : dirtyPages.get(record_tid)) {
-                                            Database.getCatalog()
-                                                    .getDatabaseFile(after.getId().getTableId())
-                                                    .writePage(after);
-                                        }
-                                        dirtyPages.remove(record_tid);
-                                        this.tidToFirstLogRecord.remove(record_tid);
-                                    }
-                                    break;
-                                case UPDATE_RECORD:
-                                    Page before = readPageData(raf);
-                                    Page after = readPageData(raf);
-                                    curOffset = raf.readLong();
-                                    this.tidToFirstLogRecord.put(record_tid, startOffset);
-                                    dirtyPages.computeIfAbsent(record_tid, k -> new ArrayList<>()).add(after);
-                                    beforePages.put(before.getId(), before);
-                                    break;
-                                default:
-                                    Debug.log("Error type record! ");
-                            }
+                        int type = raf.readInt();
+                        long txid = raf.readLong();
+                        switch (type) {
+                            case UPDATE_RECORD:
+                                Page beforeImage = readPageData(raf);
+                                Page afterImage = readPageData(raf);
+                                List<Page> l1 = beforePages.getOrDefault(txid, new ArrayList<>());
+                                l1.add(beforeImage);
+                                beforePages.put(txid, l1);
+                                List<Page> l2 = afterPages.getOrDefault(txid, new ArrayList<>());
+                                l2.add(afterImage);
+                                afterPages.put(txid, l2);
+                                break;
+                            case COMMIT_RECORD:
+                                committedId.add(txid);
+                                break;
+                            case CHECKPOINT_RECORD:
+                                int numTxs = raf.readInt();
+                                while (numTxs -- > 0) {
+                                    raf.readLong();
+                                    raf.readLong();
+                                }
+                                break;
+                            default:
+                                break;
                         }
+                        //读取 offset
+                        raf.readLong();
+
                     } catch (EOFException e) {
+                        break;
                     }
                 }
+
+                //处理未提交事务，直接写before-image
+                for (long txid :beforePages.keySet()) {
+                    if (!committedId.contains(txid)) {
+                        List<Page> pages = beforePages.get(txid);
+                        for (Page p : pages) {
+                            Database.getCatalog().getDatabaseFile(p.getId().getTableId()).writePage(p);
+                        }
+                    }
+                }
+
+                //处理已提交事务，直接写after-image
+                for (long txid : committedId) {
+                    if (afterPages.containsKey(txid)) {
+                        List<Page> pages = afterPages.get(txid);
+                        for (Page page : pages) {
+                            Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
+                        }
+                    }
+                }
+
             }
          }
     }
